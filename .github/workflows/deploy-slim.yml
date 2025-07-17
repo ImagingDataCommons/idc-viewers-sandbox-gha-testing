@@ -10,9 +10,6 @@ jobs:
     container:
       image: node:20
 
-    env:
-      SLIM_BRANCH: master
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4.1.1
@@ -22,6 +19,8 @@ jobs:
           git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
           cd slim
           yarn install --frozen-lockfile
+        env:
+          SLIM_BRANCH: ${{ vars.SLIM_BRANCH || 'master' }}
 
       - name: Build slim
         run: |

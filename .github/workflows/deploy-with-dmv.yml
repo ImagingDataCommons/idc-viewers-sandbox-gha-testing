@@ -10,10 +10,6 @@ jobs:
     container:
       image: node:20
 
-    env:
-      SLIM_BRANCH: master
-      DMV_BRANCH: master
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4.1.1
@@ -23,6 +19,8 @@ jobs:
           git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
           cd slim
           yarn install --frozen-lockfile
+        env:
+          SLIM_BRANCH: ${{ vars.SLIM_BRANCH || 'master' }}
 
       - name: Clone and install dicom-microscopy-viewer dependencies
         run: |
@@ -31,6 +29,8 @@ jobs:
           yarn install --frozen-lockfile
           yarn link
           yarn build
+        env:
+          DMV_BRANCH: ${{ vars.DMV_BRANCH || 'master' }}
 
       - name: Build slim
         run: |
