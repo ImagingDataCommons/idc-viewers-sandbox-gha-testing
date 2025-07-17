@@ -10,19 +10,23 @@ jobs:
     container:
       image: node:20
 
+    env:
+      SLIM_BRANCH: master
+      DMV_BRANCH: master
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4.1.1
 
       - name: Clone and install SLIM dependencies
         run: |
-          git clone https://github.com/ImagingDataCommons/slim.git
+          git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
           cd slim
           yarn install --frozen-lockfile
 
       - name: Clone and install dicom-microscopy-viewer dependencies
         run: |
-          git clone https://github.com/ImagingDataCommons/dicom-microscopy-viewer.git
+          git clone --branch "$DMV_BRANCH" https://github.com/ImagingDataCommons/dicom-microscopy-viewer.git
           cd dicom-microscopy-viewer
           yarn install --frozen-lockfile
           yarn link
