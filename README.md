@@ -45,8 +45,10 @@ This repository contains the following GitHub Actions for automated deployment a
 
 ### Deployment URL
 
-All actions deploy to:  
-[https://viewers-sandbox-gha-testing.web.app/](https://viewers-sandbox-gha-testing.web.app/)
+Actions deploy:
+
+* OHIF v3 to [https://viewers-sandbox-gha-testing.web.app/](https://viewers-sandbox-gha-testing.web.app/)
+* Slim to [https://andrey-slim-test.web.app/](https://andrey-slim-test.web.app/)
 
 Consent screen is managed under `idc-external-031`.
 
