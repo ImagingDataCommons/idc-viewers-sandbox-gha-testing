@@ -33,9 +33,9 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0.7.1
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_SLIM }}"
           expires: 5d
-          projectId: "${{ vars.FIREBASE_PROJECT_ID }}"
+          projectId: "${{ vars.FIREBASE_PROJECT_ID_SLIM }}"
           entryPoint: ./slim
           channelId: live
           # channelId: # 'pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}'
