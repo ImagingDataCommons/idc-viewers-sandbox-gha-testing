@@ -40,6 +40,8 @@ This repository contains the following GitHub Actions for automated deployment a
 - **slim/deploy**  
   Deploys the latest version of [Slim Viewer](https://github.com/ImagingDataCommons/slim).
 
+  Secondary store format: `https://andrey-slim-test.web.app/studies/<StudyInstanceUID>?gcp=https://healthcare.googleapis.com/v1/<store>/dicomWeb`
+
 - **slim/deploy-with-dmv**  
   Deploys the latest version of [Slim Viewer](https://github.com/ImagingDataCommons/slim) along with the latest [DICOM Microscopy Viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer).
 
