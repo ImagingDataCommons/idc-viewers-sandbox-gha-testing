@@ -14,11 +14,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4.1.1
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Clone and install SLIM dependencies
         run: |
           git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
           cd slim
-          yarn install --frozen-lockfile
+          bun install --frozen-lockfile
         env:
           SLIM_BRANCH: ${{ vars.SLIM_BRANCH || 'master' }}
 
@@ -27,7 +30,7 @@ jobs:
           cd slim
           wget -O ./firebase.json "${{ vars.SLIM_FIREBASE_JSON_URL }}"
           wget -O ./public/config/test.js "${{ vars.SLIM_CONFIG_JS_URL }}"
-          REACT_APP_CONFIG=test PUBLIC_URL=/ yarn build
+          REACT_APP_CONFIG=test PUBLIC_URL=/ bun run build
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0.7.1
