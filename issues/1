@@ -1,0 +1,33 @@
+## Problem
+
+The workflow `slim/deploy-with-dmv` is failing because Corepack is not enabled in the Node.js container.
+
+**Failed Job:** https://github.com/ImagingDataCommons/idc-viewers-sandbox-gha-testing/actions/runs/21650492159/job/62413535913
+
+### Error Message
+```
+error This project's package.json defines "packageManager": "yarn@bun@latest". However the current global version of Yarn is 1.22.22.
+
+Presence of the "packageManager" field indicates that the project is meant to be used with Corepack, a tool included by default with all official Node.js distributions starting from 16.9 and 14.19.
+
+Corepack must currently be enabled by running corepack enable in your terminal. For more information, check out https://yarnpkg.com/corepack.
+```
+
+## Root Cause
+
+The `slim` repository's `package.json` defines a `packageManager` field, which requires Corepack to be enabled. The workflow uses a `node:20` container where Corepack is available but not enabled by default.
+
+## Solution
+
+Add a step to enable Corepack before running any `yarn install` commands in the workflow file `.github/workflows/deploy-with-dmv.yml`:
+
+```yaml
+- name: Enable Corepack
+  run: corepack enable
+```
+
+This step should be added after the checkout step and before the "Clone and install SLIM dependencies" step.
+
+## Additional Note
+
+The `packageManager` field value in the `slim` repository appears to be "yarn@bun@latest", which looks incorrect. It should typically be something like "yarn@4.0.2" or "yarn@stable". This may need to be investigated in the slim repository.
