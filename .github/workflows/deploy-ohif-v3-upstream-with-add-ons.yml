@@ -2,6 +2,8 @@ name: ohif/deploy-v3-upstream-with-add-ons
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 11 * * *'
 
 jobs:
   link_build_and_deploy:
