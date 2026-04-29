@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v6.0.2
       
       - name: Clone and install OHIF dependencies
         run: |
@@ -43,7 +43,7 @@ jobs:
           PUBLIC_URL=/ APP_CONFIG=config/test.js yarn build
 
       - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0.7.1
+        uses: FirebaseExtended/action-hosting-deploy@v0.10.0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
           firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
