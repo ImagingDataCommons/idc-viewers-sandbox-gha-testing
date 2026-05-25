@@ -40,11 +40,10 @@ jobs:
           cd Viewers
           wget -O ./firebase.json "${{ vars.OHIF_FIREBASE_JSON_URL }}"
           wget -O ./platform/app/public/config/test.js "${{ vars.OHIF_CONFIG_JS_URL }}"
-          # Upstream ships bun.lock; Nx/Lerna 9 otherwise runs targets with `bun` (not installed in CI).
-          node -e "const fs=require('fs');const p='nx.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.cli={...(j.cli||{}),packageManager:'yarn'};fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
           yarn cli link-mode ../ohif-gcp-mode
           yarn cli link-extension ../ohif-gcp-extension
-          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn build
+          # Upstream has bun.lock; `yarn build` -> lerna/nx runs scripts via `bun` (not in this image).
+          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn --cwd platform/app run build:viewer
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0.10.0
