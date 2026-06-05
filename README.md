@@ -45,6 +45,19 @@ This repository contains the following GitHub Actions for automated deployment a
 - **slim/deploy-with-dmv**  
   Deploys the latest version of [Slim Viewer](https://github.com/ImagingDataCommons/slim) along with the latest [DICOM Microscopy Viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer).
 
+### Slim and DICOM Microscopy Viewer (pnpm)
+
+[Slim](https://github.com/ImagingDataCommons/slim) and [DICOM Microscopy Viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer) use **pnpm** (`packageManager: pnpm@10.34.1`). The `slim/deploy*` workflows install dependencies with `pnpm install --frozen-lockfile`.
+
+The `slim/deploy-with-dmv*` workflows clone both repositories as siblings, build DMV, then link it into Slim for the production build:
+
+```sh
+cd dicom-microscopy-viewer && pnpm install --frozen-lockfile && pnpm run build
+cd ../slim && pnpm link ../dicom-microscopy-viewer && pnpm install --frozen-lockfile
+```
+
+With pnpm 10, `pnpm link` records the link in the local install only; `pnpm install` must run immediately afterward so `node_modules` resolves to the sibling DMV clone (not the registry copy under `.pnpm`). Do not commit `link:` overrides from local linking into Slim's `package.json` or `pnpm-lock.yaml`.
+
 ### Deployment URL
 
 Actions deploy:
