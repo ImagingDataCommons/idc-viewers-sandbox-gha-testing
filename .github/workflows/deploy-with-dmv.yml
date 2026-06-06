@@ -42,7 +42,7 @@ jobs:
         run: |
           cd slim
           pnpm link ../dicom-microscopy-viewer
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           wget -O ./firebase.json "${{ vars.SLIM_FIREBASE_JSON_URL }}"
           wget -O ./public/config/test.js "${{ vars.SLIM_CONFIG_JS_URL }}"
           REACT_APP_CONFIG=test PUBLIC_URL=/ pnpm run build
