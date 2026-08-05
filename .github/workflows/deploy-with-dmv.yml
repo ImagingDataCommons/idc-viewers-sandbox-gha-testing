@@ -1,9 +1,24 @@
 name: slim/deploy-with-dmv
 
+run-name: slim/deploy-with-dmv (slim=${{ inputs.slim_branch || vars.SLIM_BRANCH || 'master' }}, dmv=${{ inputs.dmv_branch || vars.DMV_BRANCH || 'master' }})
+
 on:
   workflow_dispatch:
+    inputs:
+      slim_branch:
+        description: 'slim branch/tag/SHA (blank = repository variable SLIM_BRANCH, or master)'
+        required: false
+        type: string
+      dmv_branch:
+        description: 'dicom-microscopy-viewer branch/tag/SHA (blank = repository variable DMV_BRANCH, or master)'
+        required: false
+        type: string
   schedule:
     - cron: '0 11 * * *'
+
+env:
+  SLIM_BRANCH: ${{ inputs.slim_branch || vars.SLIM_BRANCH || 'master' }}
+  DMV_BRANCH: ${{ inputs.dmv_branch || vars.DMV_BRANCH || 'master' }}
 
 jobs:
   build_and_deploy:
@@ -13,6 +28,21 @@ jobs:
       image: node:20
 
     steps:
+      - name: Show build configuration
+        run: |
+          echo "=========================================================="
+          echo "  SLIM_BRANCH : $SLIM_BRANCH"
+          echo "  DMV_BRANCH  : $DMV_BRANCH"
+          echo "=========================================================="
+          {
+            echo "### Build configuration"
+            echo ""
+            echo "| Variable | Value | Source |"
+            echo "| --- | --- | --- |"
+            echo "| \`SLIM_BRANCH\` | \`$SLIM_BRANCH\` | ${{ inputs.slim_branch && 'workflow_dispatch input' || (vars.SLIM_BRANCH && 'repository variable' || 'default') }} |"
+            echo "| \`DMV_BRANCH\` | \`$DMV_BRANCH\` | ${{ inputs.dmv_branch && 'workflow_dispatch input' || (vars.DMV_BRANCH && 'repository variable' || 'default') }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
         uses: actions/checkout@v7.0.1
 
@@ -26,8 +56,6 @@ jobs:
           git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
           cd slim
           pnpm install --frozen-lockfile
-        env:
-          SLIM_BRANCH: ${{ vars.SLIM_BRANCH || 'master' }}
 
       - name: Clone, install, and build dicom-microscopy-viewer
         run: |
@@ -35,8 +63,6 @@ jobs:
           cd dicom-microscopy-viewer
           pnpm install --frozen-lockfile
           pnpm run build
-        env:
-          DMV_BRANCH: ${{ vars.DMV_BRANCH || 'master' }}
 
       - name: Build slim with linked dicom-microscopy-viewer
         run: |
