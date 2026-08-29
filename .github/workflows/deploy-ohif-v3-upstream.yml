@@ -1,7 +1,22 @@
 name: ohif/deploy-v3-upstream
 
+run-name: ohif/deploy-v3-upstream (ohif=${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || 'latest' }}, cs3d=${{ inputs.cs3d_version || vars.CS3D_VERSION || 'default' }})
+
 on:
   workflow_dispatch:
+    inputs:
+      ohif_version:
+        description: 'OHIF version/tag/SHA (blank = repository variable OHIF_VERSION_TAG, or latest)'
+        required: false
+        type: string
+      cs3d_version:
+        description: 'Cornerstone3D version (blank = use version from OHIF repo, e.g., 3.0.0 or latest)'
+        required: false
+        type: string
+
+env:
+  OHIF_VERSION: ${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || '' }}
+  CS3D_VERSION: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
 
 jobs:
   build_and_deploy:
@@ -11,14 +26,38 @@ jobs:
       image: node:20
 
     steps:
+      - name: Show build configuration
+        run: |
+          echo "=========================================================="
+          echo "  OHIF_VERSION : ${OHIF_VERSION:-'(latest/default)'}"
+          echo "  CS3D_VERSION : ${CS3D_VERSION:-'(from OHIF repo)'}"
+          echo "=========================================================="
+          {
+            echo "### Build configuration"
+            echo ""
+            echo "| Variable | Value | Source |"
+            echo "| --- | --- | --- |"
+            echo "| \`OHIF_VERSION\` | \`${OHIF_VERSION:-'(default)'}\` | ${{ inputs.ohif_version && 'workflow_dispatch input' || (vars.OHIF_VERSION_TAG && 'repository variable' || 'default') }} |"
+            echo "| \`CS3D_VERSION\` | \`${CS3D_VERSION:-'(from OHIF repo)'}\` | ${{ inputs.cs3d_version && 'workflow_dispatch input' || (vars.CS3D_VERSION && 'repository variable' || 'default') }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout code
         uses: actions/checkout@v7.0.1
-      
+
       - name: Clone and install OHIF dependencies
         run: |
           git clone https://github.com/OHIF/Viewers.git
           cd Viewers
-          yarn install --frozen-lockfile
+          if [ -n "$OHIF_VERSION" ]; then
+            git checkout "$OHIF_VERSION"
+          fi
+          if [ -n "$CS3D_VERSION" ]; then
+            echo "Updating Cornerstone3D packages to version $CS3D_VERSION..."
+            yarn up "@cornerstonejs/*@$CS3D_VERSION"
+            yarn install --no-frozen-lockfile
+          else
+            yarn install --frozen-lockfile
+          fi
 
       - name: Build OHIF
         run: |
