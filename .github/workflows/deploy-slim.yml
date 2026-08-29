@@ -1,46 +1,18 @@
 name: slim/deploy
 
+run-name: slim/deploy (slim=${{ inputs.slim_branch || vars.SLIM_BRANCH || 'master' }})
+
 on:
   workflow_dispatch:
+    inputs:
+      slim_branch:
+        description: 'Slim branch or tag (blank = repository variable SLIM_BRANCH, or master)'
+        required: false
+        type: string
 
 jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-
-    container:
-      image: node:20
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.34.1
-
-      - name: Clone and install SLIM dependencies
-        run: |
-          git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
-          cd slim
-          pnpm install --frozen-lockfile
-        env:
-          SLIM_BRANCH: ${{ vars.SLIM_BRANCH || 'master' }}
-
-      - name: Build slim
-        run: |
-          cd slim
-          wget -O ./firebase.json "${{ vars.SLIM_FIREBASE_JSON_URL }}"
-          wget -O ./public/config/test.js "${{ vars.SLIM_CONFIG_JS_URL }}"
-          REACT_APP_CONFIG=test PUBLIC_URL=/ pnpm run build
-
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0.11.0
-        with:
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_SLIM }}"
-          expires: 5d
-          projectId: "${{ vars.FIREBASE_PROJECT_ID_SLIM }}"
-          entryPoint: ./slim
-          channelId: live
-          # channelId: # 'pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}'
+  deploy:
+    uses: ./.github/workflows/_deploy-slim.yml
+    with:
+      slim_branch: ${{ inputs.slim_branch || vars.SLIM_BRANCH || 'master' }}
+    secrets: inherit

@@ -1,88 +1,138 @@
-# IDC Viewers Sandbox - GitHub Actions Testing
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Workflows-2088FF?logo=github-actions&logoColor=white)](https://github.com/ImagingDataCommons/idc-viewers-sandbox-gha-testing/actions)
 
-This repository stores and manages GitHub Actions for various Imaging Data Commons (IDC) repositories.
+# IDC Viewers Sandbox
 
-### Associated IDC Repositories:
+**GitHub Actions for automated deployment and testing of Imaging Data Commons (IDC) viewer applications**
 
-- [Viewers](https://github.com/OHIF/Viewers) (upstream)
-- [ViewersV3](https://github.com/ImagingDataCommons/ViewersV3) (fork of upstream)
-- [OHIF IDC Mode](https://github.com/ImagingDataCommons/ohif-idc-mode)
-- [OHIF GCP Mode](https://github.com/ImagingDataCommons/ohif-gcp-mode)
-- [Slim Viewer](https://github.com/ImagingDataCommons/slim)
-- [DICOM Microscopy Viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer)
+This repository manages GitHub Actions workflows for deploying preview instances of various IDC medical imaging viewer applications to Firebase Hosting.
 
-## GitHub Actions Overview
+## Table of Contents
 
-This repository contains the following GitHub Actions for automated deployment and testing across IDC repositories:
+- [Associated Repositories](#associated-repositories)
+- [Workflows](#workflows)
+  - [OHIF Viewer Workflows](#ohif-viewer-workflows)
+  - [Slim Viewer Workflows](#slim-viewer-workflows)
+- [Deployment URLs](#deployment-urls)
+- [Configuration](#configuration)
+  - [Required Secrets](#required-secrets)
+  - [Required Variables](#required-variables)
+  - [Optional Variables](#optional-variables)
+- [Package Managers](#package-managers)
+- [License](#license)
 
-- **ohif/deploy-v3**  
-  Deploys a preview of the [ViewersV3](https://github.com/ImagingDataCommons/ViewersV3) repository’s `master` branch.
-- **ohif/deploy-v3-with-add-ons**  
-  Deploys a preview of the [ViewersV3](https://github.com/ImagingDataCommons/ViewersV3) `master` branch, pre-configured with the latest changes from:
+## Associated Repositories
 
-  - [OHIF GCP Mode](https://github.com/ImagingDataCommons/ohif-gcp-mode)
-  - [OHIF GCP Extension](https://github.com/ImagingDataCommons/ohif-gcp-extension)
+| Repository | Description |
+| :--------- | :---------- |
+| [OHIF Viewers](https://github.com/OHIF/Viewers) | Upstream OHIF medical imaging viewer |
+| [ViewersV3](https://github.com/ImagingDataCommons/ViewersV3) | IDC fork of OHIF Viewers |
+| [ohif-gcp-mode](https://github.com/ImagingDataCommons/ohif-gcp-mode) | OHIF mode for Google Cloud Platform integration |
+| [ohif-gcp-extension](https://github.com/ImagingDataCommons/ohif-gcp-extension) | OHIF extension for Google Cloud Platform features |
+| [Slim](https://github.com/ImagingDataCommons/slim) | Interoperable slide microscopy viewer |
+| [dicom-microscopy-viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer) | JavaScript library for DICOM microscopy viewing |
 
-- **ohif/deploy-v3-upstream**  
-  Deploys a preview of the [Viewers](https://github.com/OHIF/Viewers) repository’s `master` branch.
+## Workflows
 
-- **ohif/deploy-v3-upstream-with-add-ons**  
-  Deploys a preview of the [Viewers](https://github.com/OHIF/Viewers) `master` branch, pre-configured with the latest changes from:
+### OHIF Viewer Workflows
 
-  - [OHIF GCP Mode](https://github.com/ImagingDataCommons/ohif-gcp-mode)
-  - [OHIF GCP Extension](https://github.com/ImagingDataCommons/ohif-gcp-extension)
- 
-  Format of the URL for configuring secondary GHC DICOM store: `https://viewers-sandbox-gha-testing.web.app/viewer?StudyInstanceUIDs=<UID>&gcp=projects/<project>/locations/<location>/datasets/<dataset>/dicomStores/<store>`
+| Workflow | Description | Trigger |
+| :------- | :---------- | :------ |
+| `ohif/deploy-v3` | Deploy [ViewersV3](https://github.com/ImagingDataCommons/ViewersV3) | Manual |
+| `ohif/deploy-v3-with-add-ons` | Deploy ViewersV3 with [ohif-gcp-mode](https://github.com/ImagingDataCommons/ohif-gcp-mode) and [ohif-gcp-extension](https://github.com/ImagingDataCommons/ohif-gcp-extension) | Manual |
+| `ohif/deploy-v3-upstream` | Deploy upstream [OHIF Viewers](https://github.com/OHIF/Viewers) | Manual |
+| `ohif/deploy-v3-upstream-with-add-ons` | Deploy upstream OHIF Viewers with GCP add-ons | Manual, Daily (11:00 UTC) |
 
-  Switching primary DICOM store: `http://localhost:3000/projects/project-x/locations/us/datasets/some-dataset/dicomStores/test-samples/study/1.3.6.1.4.1.123.5.2.1.123.123.123`
+**Workflow inputs:**
 
+- `viewers_branch` / `ohif_version`: Branch, tag, or SHA to deploy
+- `cs3d_version`: Optional Cornerstone3D version override (e.g., `3.0.0` or `latest`)
 
-- **slim/deploy**  
-  Deploys the latest version of [Slim Viewer](https://github.com/ImagingDataCommons/slim).
+**Example URLs:**
 
-  Secondary store format: `https://andrey-slim-test.web.app/studies/<StudyInstanceUID>?gcp=https://healthcare.googleapis.com/v1/<store>/dicomWeb`
+```
+# Standard viewer
+https://viewers-sandbox-gha-testing.web.app/viewer?StudyInstanceUIDs=<UID>
 
-- **slim/deploy-with-dmv**  
-  Deploys the latest version of [Slim Viewer](https://github.com/ImagingDataCommons/slim) along with the latest [DICOM Microscopy Viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer).
+# With secondary GCP DICOM store
+https://viewers-sandbox-gha-testing.web.app/viewer?StudyInstanceUIDs=<UID>&gcp=projects/<project>/locations/<location>/datasets/<dataset>/dicomStores/<store>
 
-### Slim and DICOM Microscopy Viewer (pnpm)
-
-[Slim](https://github.com/ImagingDataCommons/slim) and [DICOM Microscopy Viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer) use **pnpm** (`packageManager: pnpm@10.34.1`). The `slim/deploy*` workflows install dependencies with `pnpm install --frozen-lockfile`.
-
-The `slim/deploy-with-dmv*` workflows clone both repositories as siblings, build DMV, then link it into Slim for the production build:
-
-```sh
-cd dicom-microscopy-viewer && pnpm install --frozen-lockfile && pnpm run build
-cd ../slim && pnpm link ../dicom-microscopy-viewer && pnpm install --frozen-lockfile
+# Direct GCP store access
+https://viewers-sandbox-gha-testing.web.app/projects/<project>/locations/<location>/datasets/<dataset>/dicomStores/<store>/study/<StudyInstanceUID>
 ```
 
-With pnpm 10, `pnpm link` records the link in the local install only; `pnpm install` must run immediately afterward so `node_modules` resolves to the sibling DMV clone (not the registry copy under `.pnpm`). Do not commit `link:` overrides from local linking into Slim's `package.json` or `pnpm-lock.yaml`.
+### Slim Viewer Workflows
 
-### Deployment URL
+| Workflow | Description | Trigger |
+| :------- | :---------- | :------ |
+| `slim/deploy` | Deploy [Slim](https://github.com/ImagingDataCommons/slim) | Manual |
+| `slim/deploy-with-dmv` | Deploy Slim with linked [dicom-microscopy-viewer](https://github.com/ImagingDataCommons/dicom-microscopy-viewer) | Manual, Daily (11:00 UTC) |
+| `slim/deploy-with-dmv-proxy` | Deploy Slim with DMV using proxy configuration | Manual |
 
-Actions deploy:
+**Workflow inputs:**
 
-* OHIF v3 to [https://viewers-sandbox-gha-testing.web.app/](https://viewers-sandbox-gha-testing.web.app/)
-* Slim to [https://andrey-slim-test.web.app/](https://andrey-slim-test.web.app/)
+- `slim_branch`: Slim branch or tag to deploy
+- `dmv_branch`: dicom-microscopy-viewer branch or tag to deploy
 
-Consent screen is managed under `idc-external-031`.
+**Example URL:**
+
+```
+https://andrey-slim-test.web.app/studies/<StudyInstanceUID>?gcp=https://healthcare.googleapis.com/v1/<store>/dicomWeb
+```
+
+## Deployment URLs
+
+| Application | URL |
+| :---------- | :-- |
+| OHIF Viewer | https://viewers-sandbox-gha-testing.web.app/ |
+| Slim Viewer | https://andrey-slim-test.web.app/ |
+
+> **Note:** OAuth consent screen is managed under `idc-external-031`.
 
 ## Configuration
 
-The following environment variables are required for configuring the GitHub Actions:
+### Required Secrets
 
-- **FIREBASE_PROJECT_ID**  
-  Firebase project identifier.
-- **OHIF_CONFIG_JS_URL**  
-  URL to a Gist containing the OHIF configuration (with OIDC).
+| Secret | Description |
+| :----- | :---------- |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase service account for OHIF deployments |
+| `FIREBASE_SERVICE_ACCOUNT_SLIM` | Firebase service account for Slim deployments |
 
-- **OHIF_FIREBASE_JSON_URL**  
-  URL to the Firebase configuration for OHIF.
+### Required Variables
 
-- **SLIM_CONFIG_JS_URL**  
-  URL to a Gist containing the Slim Viewer configuration (with OIDC).
+| Variable | Description |
+| :------- | :---------- |
+| `FIREBASE_PROJECT_ID` | Firebase project ID for OHIF deployments |
+| `FIREBASE_PROJECT_ID_SLIM` | Firebase project ID for Slim deployments |
+| `OHIF_CONFIG_JS_URL` | URL to OHIF configuration file (with OIDC) |
+| `OHIF_FIREBASE_JSON_URL` | URL to Firebase configuration for OHIF |
+| `SLIM_CONFIG_JS_URL` | URL to Slim configuration file (with OIDC) |
+| `SLIM_FIREBASE_JSON_URL` | URL to Firebase configuration for Slim |
 
-- **SLIM_FIREBASE_JSON_URL**  
-  URL to the Firebase configuration for Slim Viewer.
+### Optional Variables
 
----
+| Variable | Description | Default |
+| :------- | :---------- | :------ |
+| `VIEWERS_BRANCH` | Default branch for ViewersV3 | `master` |
+| `OHIF_VERSION_TAG` | Default version for upstream OHIF | default branch |
+| `CS3D_VERSION` | Default Cornerstone3D version override | from repo |
+| `SLIM_BRANCH` | Default branch for Slim | `master` |
+| `DMV_BRANCH` | Default branch for dicom-microscopy-viewer | `master` |
+| `SLIM_PROXY_CONFIG_JS_URL` | Slim configuration for proxy deployments | — |
+
+## Package Managers
+
+**OHIF workflows** use **Yarn** for dependency management.
+
+**Slim workflows** use **pnpm** (`packageManager: pnpm@10.34.1`). The `slim/deploy-with-dmv*` workflows link the local dicom-microscopy-viewer build:
+
+```sh
+cd dicom-microscopy-viewer && pnpm install --frozen-lockfile && pnpm run build
+cd ../slim && pnpm link ../dicom-microscopy-viewer && pnpm install --no-frozen-lockfile
+```
+
+> **Note:** With pnpm 10, `pnpm link` records the link locally. Running `pnpm install` afterward ensures `node_modules` resolves to the sibling DMV build rather than the registry copy.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

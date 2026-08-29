@@ -6,80 +6,20 @@ on:
   workflow_dispatch:
     inputs:
       slim_branch:
-        description: 'slim branch/tag/SHA (blank = repository variable SLIM_BRANCH, or master)'
+        description: 'Slim branch or tag (blank = repository variable SLIM_BRANCH, or master)'
         required: false
         type: string
       dmv_branch:
-        description: 'dicom-microscopy-viewer branch/tag/SHA (blank = repository variable DMV_BRANCH, or master)'
+        description: 'dicom-microscopy-viewer branch or tag (blank = repository variable DMV_BRANCH, or master)'
         required: false
         type: string
   schedule:
     - cron: '0 11 * * *'
 
-env:
-  SLIM_BRANCH: ${{ inputs.slim_branch || vars.SLIM_BRANCH || 'master' }}
-  DMV_BRANCH: ${{ inputs.dmv_branch || vars.DMV_BRANCH || 'master' }}
-
 jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-
-    container:
-      image: node:20
-
-    steps:
-      - name: Show build configuration
-        run: |
-          echo "=========================================================="
-          echo "  SLIM_BRANCH : $SLIM_BRANCH"
-          echo "  DMV_BRANCH  : $DMV_BRANCH"
-          echo "=========================================================="
-          {
-            echo "### Build configuration"
-            echo ""
-            echo "| Variable | Value | Source |"
-            echo "| --- | --- | --- |"
-            echo "| \`SLIM_BRANCH\` | \`$SLIM_BRANCH\` | ${{ inputs.slim_branch && 'workflow_dispatch input' || (vars.SLIM_BRANCH && 'repository variable' || 'default') }} |"
-            echo "| \`DMV_BRANCH\` | \`$DMV_BRANCH\` | ${{ inputs.dmv_branch && 'workflow_dispatch input' || (vars.DMV_BRANCH && 'repository variable' || 'default') }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.34.1
-
-      - name: Clone and install SLIM dependencies
-        run: |
-          git clone --branch "$SLIM_BRANCH" https://github.com/ImagingDataCommons/slim.git
-          cd slim
-          pnpm install --frozen-lockfile
-
-      - name: Clone, install, and build dicom-microscopy-viewer
-        run: |
-          git clone --branch "$DMV_BRANCH" https://github.com/ImagingDataCommons/dicom-microscopy-viewer.git
-          cd dicom-microscopy-viewer
-          pnpm install --frozen-lockfile
-          pnpm run build
-
-      - name: Build slim with linked dicom-microscopy-viewer
-        run: |
-          cd slim
-          pnpm link ../dicom-microscopy-viewer
-          pnpm install --no-frozen-lockfile
-          wget -O ./firebase.json "${{ vars.SLIM_FIREBASE_JSON_URL }}"
-          wget -O ./public/config/test.js "${{ vars.SLIM_CONFIG_JS_URL }}"
-          REACT_APP_CONFIG=test PUBLIC_URL=/ pnpm run build
-
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0.11.0
-        with:
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_SLIM }}"
-          expires: 5d
-          projectId: "${{ vars.FIREBASE_PROJECT_ID_SLIM }}"
-          entryPoint: ./slim
-          channelId: live
-          # channelId: # 'pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}'
+  deploy:
+    uses: ./.github/workflows/_deploy-slim.yml
+    with:
+      slim_branch: ${{ inputs.slim_branch || vars.SLIM_BRANCH || 'master' }}
+      dmv_branch: ${{ inputs.dmv_branch || vars.DMV_BRANCH || 'master' }}
+    secrets: inherit

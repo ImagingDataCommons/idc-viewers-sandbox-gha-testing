@@ -14,76 +14,12 @@ on:
         required: false
         type: string
 
-env:
-  VIEWERS_BRANCH: ${{ inputs.viewers_branch || vars.VIEWERS_BRANCH || 'master' }}
-  CS3D_VERSION: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
-
 jobs:
-  link_build_and_deploy:
-    runs-on: ubuntu-latest
-
-    container:
-      image: node:20
-
-    steps:
-      - name: Show build configuration
-        run: |
-          echo "=========================================================="
-          echo "  VIEWERS_BRANCH : $VIEWERS_BRANCH"
-          echo "  CS3D_VERSION   : ${CS3D_VERSION:-'(from repo)'}"
-          echo "=========================================================="
-          {
-            echo "### Build configuration"
-            echo ""
-            echo "| Variable | Value | Source |"
-            echo "| --- | --- | --- |"
-            echo "| \`VIEWERS_BRANCH\` | \`$VIEWERS_BRANCH\` | ${{ inputs.viewers_branch && 'workflow_dispatch input' || (vars.VIEWERS_BRANCH && 'repository variable' || 'default') }} |"
-            echo "| \`CS3D_VERSION\` | \`${CS3D_VERSION:-'(from repo)'}\` | ${{ inputs.cs3d_version && 'workflow_dispatch input' || (vars.CS3D_VERSION && 'repository variable' || 'default') }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
-
-      - name: Clone and install OHIF dependencies
-        run: |
-          git clone --branch "$VIEWERS_BRANCH" https://github.com/ImagingDataCommons/ViewersV3.git
-          cd ViewersV3
-          if [ -n "$CS3D_VERSION" ]; then
-            echo "Updating Cornerstone3D packages to version $CS3D_VERSION..."
-            yarn up "@cornerstonejs/*@$CS3D_VERSION"
-            yarn install --no-frozen-lockfile
-          else
-            yarn install --frozen-lockfile
-          fi
-
-      - name: Clone and install ohif-gcp-mode dependencies
-        run: |
-          git clone https://github.com/ImagingDataCommons/ohif-gcp-mode.git
-          cd ohif-gcp-mode
-          yarn install --frozen-lockfile
-
-      - name: Clone and install ohif-gcp-extension dependencies
-        run: |
-          git clone https://github.com/ImagingDataCommons/ohif-gcp-extension.git
-          cd ohif-gcp-extension
-          yarn install --frozen-lockfile
-
-      - name: Link ohif-gcp-mode and ohif-gcp-extension to OHIF and build
-        run: |
-          cd ViewersV3
-          wget -O ./firebase.json "${{ vars.OHIF_FIREBASE_JSON_URL }}"
-          wget -O ./platform/app/public/config/test.js "${{ vars.OHIF_CONFIG_JS_URL }}"
-          yarn cli link-mode ../ohif-gcp-mode
-          yarn cli link-extension ../ohif-gcp-extension
-          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn build
-
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0.11.0
-        with:
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
-          expires: 5d
-          projectId: "${{ vars.FIREBASE_PROJECT_ID }}"
-          entryPoint: ./ViewersV3
-          channelId: live 
-          # channelId: # 'pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}'
+  deploy:
+    uses: ./.github/workflows/_deploy-ohif.yml
+    with:
+      viewers_repo: 'ImagingDataCommons/ViewersV3'
+      viewers_branch: ${{ inputs.viewers_branch || vars.VIEWERS_BRANCH || 'master' }}
+      cs3d_version: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
+      link_addons: true
+    secrets: inherit

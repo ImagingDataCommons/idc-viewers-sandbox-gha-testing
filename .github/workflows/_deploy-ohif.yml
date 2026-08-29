@@ -1,0 +1,128 @@
+name: _deploy-ohif
+
+on:
+  workflow_call:
+    inputs:
+      viewers_repo:
+        description: 'Viewers repository (ImagingDataCommons/ViewersV3 or OHIF/Viewers)'
+        required: true
+        type: string
+      viewers_branch:
+        description: 'Branch/tag/SHA to deploy (empty = use default branch)'
+        required: false
+        type: string
+        default: ''
+      cs3d_version:
+        description: 'Cornerstone3D version override (empty = use repo version)'
+        required: false
+        type: string
+        default: ''
+      link_addons:
+        description: 'Link ohif-gcp-mode and ohif-gcp-extension'
+        required: false
+        type: boolean
+        default: false
+      use_bun_workaround:
+        description: 'Use yarn --cwd workaround for bun.lock repos'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+
+    container:
+      image: node:20
+
+    steps:
+      - name: Show build configuration
+        run: |
+          echo "=========================================================="
+          echo "  VIEWERS_REPO   : ${{ inputs.viewers_repo }}"
+          echo "  VIEWERS_BRANCH : ${{ inputs.viewers_branch || '(default branch)' }}"
+          echo "  CS3D_VERSION   : ${{ inputs.cs3d_version || '(from repo)' }}"
+          echo "  LINK_ADDONS    : ${{ inputs.link_addons }}"
+          echo "=========================================================="
+          {
+            echo "### Build configuration"
+            echo ""
+            echo "| Variable | Value |"
+            echo "| --- | --- |"
+            echo "| \`VIEWERS_REPO\` | \`${{ inputs.viewers_repo }}\` |"
+            echo "| \`VIEWERS_BRANCH\` | \`${{ inputs.viewers_branch || '(default branch)' }}\` |"
+            echo "| \`CS3D_VERSION\` | \`${{ inputs.cs3d_version || '(from repo)' }}\` |"
+            echo "| \`LINK_ADDONS\` | \`${{ inputs.link_addons }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Clone Viewers repository
+        run: git clone https://github.com/${{ inputs.viewers_repo }}.git Viewers
+
+      - name: Checkout specified version
+        if: inputs.viewers_branch != ''
+        run: |
+          cd Viewers
+          git checkout "${{ inputs.viewers_branch }}"
+
+      - name: Install OHIF dependencies
+        run: |
+          cd Viewers
+          if [ -n "${{ inputs.cs3d_version }}" ]; then
+            echo "Updating Cornerstone3D packages to version ${{ inputs.cs3d_version }}..."
+            yarn up "@cornerstonejs/*@${{ inputs.cs3d_version }}"
+            yarn install --no-frozen-lockfile
+          else
+            yarn install --frozen-lockfile
+          fi
+
+      - name: Clone and install ohif-gcp-mode
+        if: inputs.link_addons
+        run: |
+          git clone https://github.com/ImagingDataCommons/ohif-gcp-mode.git
+          cd ohif-gcp-mode
+          yarn install --frozen-lockfile
+
+      - name: Clone and install ohif-gcp-extension
+        if: inputs.link_addons
+        run: |
+          git clone https://github.com/ImagingDataCommons/ohif-gcp-extension.git
+          cd ohif-gcp-extension
+          yarn install --frozen-lockfile
+
+      - name: Link add-ons
+        if: inputs.link_addons
+        run: |
+          cd Viewers
+          yarn cli link-mode ../ohif-gcp-mode
+          yarn cli link-extension ../ohif-gcp-extension
+
+      - name: Download configuration files
+        run: |
+          cd Viewers
+          wget -O ./firebase.json "${{ vars.OHIF_FIREBASE_JSON_URL }}"
+          wget -O ./platform/app/public/config/test.js "${{ vars.OHIF_CONFIG_JS_URL }}"
+
+      - name: Build OHIF (standard)
+        if: ${{ !inputs.use_bun_workaround }}
+        run: |
+          cd Viewers
+          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn build
+
+      - name: Build OHIF (bun workaround)
+        if: ${{ inputs.use_bun_workaround }}
+        run: |
+          cd Viewers
+          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn --cwd platform/app run build:viewer
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0.11.0
+        with:
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+          expires: 5d
+          projectId: "${{ vars.FIREBASE_PROJECT_ID }}"
+          entryPoint: ./Viewers
+          channelId: live

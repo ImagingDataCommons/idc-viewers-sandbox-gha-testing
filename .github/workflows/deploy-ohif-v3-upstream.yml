@@ -1,12 +1,12 @@
 name: ohif/deploy-v3-upstream
 
-run-name: ohif/deploy-v3-upstream (ohif=${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || 'latest' }}, cs3d=${{ inputs.cs3d_version || vars.CS3D_VERSION || 'default' }})
+run-name: ohif/deploy-v3-upstream (ohif=${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || 'default' }}, cs3d=${{ inputs.cs3d_version || vars.CS3D_VERSION || 'default' }})
 
 on:
   workflow_dispatch:
     inputs:
       ohif_version:
-        description: 'OHIF version/tag/SHA (blank = repository variable OHIF_VERSION_TAG, or latest)'
+        description: 'OHIF version/tag/SHA (blank = repository variable OHIF_VERSION_TAG, or default branch)'
         required: false
         type: string
       cs3d_version:
@@ -14,67 +14,12 @@ on:
         required: false
         type: string
 
-env:
-  OHIF_VERSION: ${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || '' }}
-  CS3D_VERSION: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
-
 jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-
-    container:
-      image: node:20
-
-    steps:
-      - name: Show build configuration
-        run: |
-          echo "=========================================================="
-          echo "  OHIF_VERSION : ${OHIF_VERSION:-'(latest/default)'}"
-          echo "  CS3D_VERSION : ${CS3D_VERSION:-'(from OHIF repo)'}"
-          echo "=========================================================="
-          {
-            echo "### Build configuration"
-            echo ""
-            echo "| Variable | Value | Source |"
-            echo "| --- | --- | --- |"
-            echo "| \`OHIF_VERSION\` | \`${OHIF_VERSION:-'(default)'}\` | ${{ inputs.ohif_version && 'workflow_dispatch input' || (vars.OHIF_VERSION_TAG && 'repository variable' || 'default') }} |"
-            echo "| \`CS3D_VERSION\` | \`${CS3D_VERSION:-'(from OHIF repo)'}\` | ${{ inputs.cs3d_version && 'workflow_dispatch input' || (vars.CS3D_VERSION && 'repository variable' || 'default') }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
-
-      - name: Clone and install OHIF dependencies
-        run: |
-          git clone https://github.com/OHIF/Viewers.git
-          cd Viewers
-          if [ -n "$OHIF_VERSION" ]; then
-            git checkout "$OHIF_VERSION"
-          fi
-          if [ -n "$CS3D_VERSION" ]; then
-            echo "Updating Cornerstone3D packages to version $CS3D_VERSION..."
-            yarn up "@cornerstonejs/*@$CS3D_VERSION"
-            yarn install --no-frozen-lockfile
-          else
-            yarn install --frozen-lockfile
-          fi
-
-      - name: Build OHIF
-        run: |
-          cd Viewers
-          wget -O ./firebase.json "${{ vars.OHIF_FIREBASE_JSON_URL }}"
-          wget -O ./platform/app/public/config/test.js "${{ vars.OHIF_CONFIG_JS_URL }}"
-          # Upstream has bun.lock; `yarn build` -> lerna/nx runs scripts via `bun` (not in this image).
-          # Only @ohif/app defines build:viewer — invoke it with yarn directly.
-          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn --cwd platform/app run build:viewer
-
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0.11.0
-        with:
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
-          expires: 5d
-          projectId: "${{ vars.FIREBASE_PROJECT_ID }}"
-          entryPoint: ./Viewers
-          channelId: live 
-          # channelId: # 'pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}'
+  deploy:
+    uses: ./.github/workflows/_deploy-ohif.yml
+    with:
+      viewers_repo: 'OHIF/Viewers'
+      viewers_branch: ${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || '' }}
+      cs3d_version: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
+      use_bun_workaround: true
+    secrets: inherit
