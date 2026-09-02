@@ -102,11 +102,73 @@ jobs:
           if [ "$INPUT_VER" = "latest" ]; then
             echo "Using 'latest' - will query npm for each package's latest version"
             echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "build_from_source=false" >> "$GITHUB_OUTPUT"
           else
             echo "tag=v$INPUT_VER" >> "$GITHUB_OUTPUT"
+
+            # Check if the version exists on npm (using @cornerstonejs/core as reference)
+            if curl -sf "https://registry.npmjs.org/@cornerstonejs/core/$INPUT_VER" > /dev/null 2>&1; then
+              echo "Version $INPUT_VER exists on npm"
+              echo "build_from_source=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "Version $INPUT_VER NOT on npm - will build from source"
+              echo "build_from_source=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
           echo "input_version=$INPUT_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Build Cornerstone3D from source
+        id: build-cs3d
+        if: inputs.cs3d_version != '' && steps.resolve-cs3d.outputs.build_from_source == 'true'
+        run: |
+          TAG="${{ steps.resolve-cs3d.outputs.tag }}"
+          echo "Building Cornerstone3D from source at tag: $TAG"
+
+          git clone --depth 1 --branch "$TAG" https://github.com/cornerstonejs/cornerstone3D.git cs3d-source
+          cd cs3d-source
+
+          # Install dependencies and build
+          yarn install --frozen-lockfile
+          yarn build
+
+          # Create tarballs directory
+          mkdir -p ../cs3d-tarballs
+
+          # Pack each package
+          for pkg_dir in packages/*/; do
+            if [ -f "$pkg_dir/package.json" ]; then
+              pkg_name=$(node -p "require('./$pkg_dir/package.json').name" 2>/dev/null || echo "")
+              if [ -n "$pkg_name" ] && [[ "$pkg_name" == @cornerstonejs/* ]] && [[ "$pkg_name" != @cornerstonejs/codec-* ]]; then
+                echo "Packing $pkg_name from $pkg_dir"
+                cd "$pkg_dir"
+                tarball=$(npm pack --pack-destination ../../../cs3d-tarballs 2>/dev/null)
+                echo "Created: $tarball"
+                cd ../..
+              fi
+            fi
+          done
+
+          # List created tarballs
+          echo "Created tarballs:"
+          ls -la ../cs3d-tarballs/
+
+          # Output the tarballs directory path
+          echo "tarballs_dir=$(pwd)/../cs3d-tarballs" >> "$GITHUB_OUTPUT"
+          echo "build_success=true" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Check source build result
+        id: check-build
+        if: inputs.cs3d_version != '' && steps.resolve-cs3d.outputs.build_from_source == 'true'
+        run: |
+          if [ "${{ steps.build-cs3d.outputs.build_success }}" = "true" ] && [ -d "cs3d-tarballs" ] && [ "$(ls -A cs3d-tarballs 2>/dev/null)" ]; then
+            echo "Source build succeeded, will use local tarballs"
+            echo "use_tarballs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Source build failed or no tarballs, will fall back to npm"
+            echo "use_tarballs=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Pin Cornerstone3D packages (Yarn)
         if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'yarn'
@@ -114,13 +176,40 @@ jobs:
           cd Viewers
           TAG="${{ steps.resolve-cs3d.outputs.tag }}"
           INPUT_VER="${{ steps.resolve-cs3d.outputs.input_version }}"
+          USE_TARBALLS="${{ steps.check-build.outputs.use_tarballs }}"
+          TARBALLS_DIR="${{ github.workspace }}/cs3d-tarballs"
 
           echo "Resolving and pinning Cornerstone3D packages via Yarn resolutions..."
+          echo "Use tarballs: $USE_TARBALLS"
 
           node --experimental-fetch -e '
             const fs = require("fs"), path = require("path");
             const tag = process.argv[1];
             const inputVer = process.argv[2];
+            const useTarballs = process.argv[3] === "true";
+            const tarballsDir = process.argv[4];
+
+            const dirMap = {
+              "@cornerstonejs/core": "core",
+              "@cornerstonejs/tools": "tools",
+              "@cornerstonejs/adapters": "adapters",
+              "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
+              "@cornerstonejs/ai": "ai",
+              "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
+              "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
+              "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
+              "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
+              "@cornerstonejs/calculate-suv": "calculate-suv",
+              "@cornerstonejs/metadata": "metadata",
+            };
+
+            function findTarball(pkg) {
+              if (!useTarballs || !fs.existsSync(tarballsDir)) return null;
+              const safeName = pkg.replace("@", "").replace("/", "-");
+              const files = fs.readdirSync(tarballsDir);
+              const tarball = files.find(f => f.startsWith(safeName) && f.endsWith(".tgz"));
+              return tarball ? path.join(tarballsDir, tarball) : null;
+            }
 
             async function getClosestNpmVersion(pkg, targetVer) {
               try {
@@ -152,20 +241,6 @@ jobs:
                 return null;
               }
             }
-
-            const dirMap = {
-              "@cornerstonejs/core": "core",
-              "@cornerstonejs/tools": "tools",
-              "@cornerstonejs/adapters": "adapters",
-              "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
-              "@cornerstonejs/ai": "ai",
-              "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
-              "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
-              "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
-              "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
-              "@cornerstonejs/calculate-suv": "calculate-suv",
-              "@cornerstonejs/metadata": "metadata",
-            };
 
             async function getVersionFromGitHub(tag, pkgName) {
               const dir = dirMap[pkgName];
@@ -211,6 +286,15 @@ jobs:
                   if (ghVer) targetVer = ghVer;
                 }
 
+                /** Try local tarball first (built from source) */
+                const tarball = findTarball(pkg);
+                if (tarball) {
+                  resolutions[pkg] = `file:${tarball}`;
+                  summary.push(`  ${pkg}: file:${path.basename(tarball)} (from source)`);
+                  continue;
+                }
+
+                /** Fall back to npm */
                 const resolved = await getClosestNpmVersion(pkg, targetVer);
                 if (resolved) {
                   resolutions[pkg] = resolved;
@@ -227,13 +311,16 @@ jobs:
               summary.forEach(s => console.log(s));
 
               fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-                "\n\n### Cornerstone3D Resolved Versions\n| Package | Version |\n| --- | --- |\n" +
-                Object.entries(resolutions).map(([k, v]) => `| \`${k}\` | \`${v}\` |`).join("\n") + "\n"
+                "\n\n### Cornerstone3D Resolved Versions\n| Package | Version | Source |\n| --- | --- | --- |\n" +
+                Object.entries(resolutions).map(([k, v]) => {
+                  const isFile = v.startsWith("file:");
+                  return `| \`${k}\` | \`${isFile ? path.basename(v.slice(5)) : v}\` | ${isFile ? "Built from source" : "npm"} |`;
+                }).join("\n") + "\n"
               );
             }
 
             main().catch(e => { console.error(e); process.exit(1); });
-          ' "$TAG" "$INPUT_VER"
+          ' "$TAG" "$INPUT_VER" "$USE_TARBALLS" "$TARBALLS_DIR"
 
       - name: Pin Cornerstone3D packages (pnpm)
         if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'pnpm'
@@ -241,13 +328,40 @@ jobs:
           cd Viewers
           TAG="${{ steps.resolve-cs3d.outputs.tag }}"
           INPUT_VER="${{ steps.resolve-cs3d.outputs.input_version }}"
+          USE_TARBALLS="${{ steps.check-build.outputs.use_tarballs }}"
+          TARBALLS_DIR="${{ github.workspace }}/cs3d-tarballs"
 
           echo "Resolving and pinning Cornerstone3D packages via pnpm overrides..."
+          echo "Use tarballs: $USE_TARBALLS"
 
           node --experimental-fetch -e '
             const fs = require("fs"), path = require("path");
             const tag = process.argv[1];
             const inputVer = process.argv[2];
+            const useTarballs = process.argv[3] === "true";
+            const tarballsDir = process.argv[4];
+
+            const dirMap = {
+              "@cornerstonejs/core": "core",
+              "@cornerstonejs/tools": "tools",
+              "@cornerstonejs/adapters": "adapters",
+              "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
+              "@cornerstonejs/ai": "ai",
+              "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
+              "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
+              "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
+              "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
+              "@cornerstonejs/calculate-suv": "calculate-suv",
+              "@cornerstonejs/metadata": "metadata",
+            };
+
+            function findTarball(pkg) {
+              if (!useTarballs || !fs.existsSync(tarballsDir)) return null;
+              const safeName = pkg.replace("@", "").replace("/", "-");
+              const files = fs.readdirSync(tarballsDir);
+              const tarball = files.find(f => f.startsWith(safeName) && f.endsWith(".tgz"));
+              return tarball ? path.join(tarballsDir, tarball) : null;
+            }
 
             async function getClosestNpmVersion(pkg, targetVer) {
               try {
@@ -279,20 +393,6 @@ jobs:
                 return null;
               }
             }
-
-            const dirMap = {
-              "@cornerstonejs/core": "core",
-              "@cornerstonejs/tools": "tools",
-              "@cornerstonejs/adapters": "adapters",
-              "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
-              "@cornerstonejs/ai": "ai",
-              "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
-              "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
-              "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
-              "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
-              "@cornerstonejs/calculate-suv": "calculate-suv",
-              "@cornerstonejs/metadata": "metadata",
-            };
 
             async function getVersionFromGitHub(tag, pkgName) {
               const dir = dirMap[pkgName];
@@ -338,6 +438,15 @@ jobs:
                   if (ghVer) targetVer = ghVer;
                 }
 
+                /** Try local tarball first (built from source) */
+                const tarball = findTarball(pkg);
+                if (tarball) {
+                  overrides[pkg] = `file:${tarball}`;
+                  summary.push(`  ${pkg}: file:${path.basename(tarball)} (from source)`);
+                  continue;
+                }
+
+                /** Fall back to npm */
                 const resolved = await getClosestNpmVersion(pkg, targetVer);
                 if (resolved) {
                   overrides[pkg] = resolved;
@@ -355,13 +464,16 @@ jobs:
               summary.forEach(s => console.log(s));
 
               fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-                "\n\n### Cornerstone3D Resolved Versions\n| Package | Version |\n| --- | --- |\n" +
-                Object.entries(overrides).map(([k, v]) => `| \`${k}\` | \`${v}\` |`).join("\n") + "\n"
+                "\n\n### Cornerstone3D Resolved Versions\n| Package | Version | Source |\n| --- | --- | --- |\n" +
+                Object.entries(overrides).map(([k, v]) => {
+                  const isFile = v.startsWith("file:");
+                  return `| \`${k}\` | \`${isFile ? path.basename(v.slice(5)) : v}\` | ${isFile ? "Built from source" : "npm"} |`;
+                }).join("\n") + "\n"
               );
             }
 
             main().catch(e => { console.error(e); process.exit(1); });
-          ' "$TAG" "$INPUT_VER"
+          ' "$TAG" "$INPUT_VER" "$USE_TARBALLS" "$TARBALLS_DIR"
 
       - name: Install OHIF dependencies (Yarn)
         if: steps.detect-pm.outputs.manager == 'yarn'
