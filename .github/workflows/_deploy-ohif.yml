@@ -13,7 +13,7 @@ on:
         type: string
         default: ''
       cs3d_version:
-        description: 'Cornerstone3D version override (empty = use repo version)'
+        description: 'Cornerstone3D version override (empty = use repo version, "latest" = npm latest, or specific version like "5.8.2")'
         required: false
         type: string
         default: ''
@@ -87,12 +87,51 @@ jobs:
         with:
           version: ${{ steps.detect-pm.outputs.pnpm_version }}
 
+      - name: Resolve Cornerstone3D version
+        id: resolve-cs3d
+        if: inputs.cs3d_version != ''
+        run: |
+          INPUT_VER="${{ inputs.cs3d_version }}"
+          INPUT_VER="${INPUT_VER#v}"
+
+          echo "Resolving Cornerstone3D version from input: $INPUT_VER"
+
+          if [ "$INPUT_VER" = "latest" ]; then
+            echo "Querying npm for latest @cornerstonejs/core version..."
+            RESOLVED=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core" | jq -r '.["dist-tags"].latest')
+          else
+            echo "Checking if version $INPUT_VER exists on npm..."
+            EXISTS=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core/$INPUT_VER" | jq -r '.version // empty')
+            if [ -n "$EXISTS" ]; then
+              RESOLVED="$INPUT_VER"
+            else
+              echo "Version $INPUT_VER not found on npm, finding closest published version..."
+              RESOLVED=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core" | jq -r --arg v "$INPUT_VER" '
+                .versions | keys | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) |
+                map(select(. <= $v)) | sort_by(split(".") | map(tonumber)) | last // empty
+              ')
+              if [ -z "$RESOLVED" ]; then
+                echo "::warning::No suitable version found, falling back to latest"
+                RESOLVED=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core" | jq -r '.["dist-tags"].latest')
+              else
+                echo "::notice::Version $INPUT_VER not published to npm, using closest available: $RESOLVED"
+              fi
+            fi
+          fi
+
+          echo "Resolved version: $RESOLVED"
+          echo "version=$RESOLVED" >> "$GITHUB_OUTPUT"
+
+          {
+            echo ""
+            echo "| \`CS3D_RESOLVED\` | \`$RESOLVED\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Pin Cornerstone3D packages (Yarn)
         if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'yarn'
         run: |
           cd Viewers
-          VER="${{ inputs.cs3d_version }}"
-          VER="${VER#v}"
+          VER="${{ steps.resolve-cs3d.outputs.version }}"
           echo "Pinning Cornerstone3D packages to $VER via Yarn resolutions..."
           node -e '
             const fs = require("fs"), path = require("path");
@@ -121,8 +160,7 @@ jobs:
         if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'pnpm'
         run: |
           cd Viewers
-          VER="${{ inputs.cs3d_version }}"
-          VER="${VER#v}"
+          VER="${{ steps.resolve-cs3d.outputs.version }}"
           echo "Pinning Cornerstone3D packages to $VER via pnpm overrides..."
           node -e '
             const fs = require("fs"), path = require("path");
