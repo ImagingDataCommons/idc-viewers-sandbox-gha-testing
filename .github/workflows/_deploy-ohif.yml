@@ -153,20 +153,21 @@ jobs:
               }
             }
 
+            const dirMap = {
+              "@cornerstonejs/core": "core",
+              "@cornerstonejs/tools": "tools",
+              "@cornerstonejs/adapters": "adapters",
+              "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
+              "@cornerstonejs/ai": "ai",
+              "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
+              "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
+              "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
+              "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
+              "@cornerstonejs/calculate-suv": "calculate-suv",
+              "@cornerstonejs/metadata": "metadata",
+            };
+
             async function getVersionFromGitHub(tag, pkgName) {
-              const dirMap = {
-                "@cornerstonejs/core": "core",
-                "@cornerstonejs/tools": "tools",
-                "@cornerstonejs/adapters": "adapters",
-                "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
-                "@cornerstonejs/ai": "ai",
-                "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
-                "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
-                "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
-                "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
-                "@cornerstonejs/calculate-suv": "calculate-suv",
-                "@cornerstonejs/metadata": "metadata",
-              };
               const dir = dirMap[pkgName];
               if (!dir) return null;
 
@@ -279,20 +280,21 @@ jobs:
               }
             }
 
+            const dirMap = {
+              "@cornerstonejs/core": "core",
+              "@cornerstonejs/tools": "tools",
+              "@cornerstonejs/adapters": "adapters",
+              "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
+              "@cornerstonejs/ai": "ai",
+              "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
+              "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
+              "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
+              "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
+              "@cornerstonejs/calculate-suv": "calculate-suv",
+              "@cornerstonejs/metadata": "metadata",
+            };
+
             async function getVersionFromGitHub(tag, pkgName) {
-              const dirMap = {
-                "@cornerstonejs/core": "core",
-                "@cornerstonejs/tools": "tools",
-                "@cornerstonejs/adapters": "adapters",
-                "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
-                "@cornerstonejs/ai": "ai",
-                "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
-                "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
-                "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
-                "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
-                "@cornerstonejs/calculate-suv": "calculate-suv",
-                "@cornerstonejs/metadata": "metadata",
-              };
               const dir = dirMap[pkgName];
               if (!dir) return null;
 
