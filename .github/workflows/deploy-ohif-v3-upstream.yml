@@ -21,5 +21,4 @@ jobs:
       viewers_repo: 'OHIF/Viewers'
       viewers_branch: ${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || '' }}
       cs3d_version: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
-      use_bun_workaround: true
     secrets: inherit

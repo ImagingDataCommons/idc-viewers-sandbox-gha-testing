@@ -24,5 +24,4 @@ jobs:
       viewers_branch: ${{ inputs.ohif_version || vars.OHIF_VERSION_TAG || '' }}
       cs3d_version: ${{ inputs.cs3d_version || vars.CS3D_VERSION || '' }}
       link_addons: true
-      use_bun_workaround: true
     secrets: inherit

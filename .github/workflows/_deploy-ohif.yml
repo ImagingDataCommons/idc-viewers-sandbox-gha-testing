@@ -22,18 +22,10 @@ on:
         required: false
         type: boolean
         default: false
-      use_bun_workaround:
-        description: 'Use yarn --cwd workaround for bun.lock repos'
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
-
-    container:
-      image: node:20
 
     steps:
       - name: Show build configuration
@@ -56,7 +48,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v4
 
       - name: Clone Viewers repository
         run: git clone https://github.com/${{ inputs.viewers_repo }}.git Viewers
@@ -67,15 +59,113 @@ jobs:
           cd Viewers
           git checkout "${{ inputs.viewers_branch }}"
 
-      - name: Install OHIF dependencies
+      - name: Detect package manager
+        id: detect-pm
+        run: |
+          cd Viewers
+          if grep -q '"packageManager".*pnpm' package.json 2>/dev/null; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+            PNPM_VERSION=$(grep -oP '"packageManager":\s*"pnpm@\K[^"]+' package.json || echo "11")
+            echo "pnpm_version=$PNPM_VERSION" >> "$GITHUB_OUTPUT"
+            NODE_VERSION=$(grep -oP '"node":\s*">=\K[0-9]+' package.json || echo "24")
+            echo "node_version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+            echo "Detected: pnpm@$PNPM_VERSION, Node >= $NODE_VERSION"
+          else
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+            echo "node_version=20" >> "$GITHUB_OUTPUT"
+            echo "Detected: Yarn Classic, Node >= 20"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.detect-pm.outputs.node_version }}
+
+      - name: Setup pnpm
+        if: steps.detect-pm.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.detect-pm.outputs.pnpm_version }}
+
+      - name: Pin Cornerstone3D packages (Yarn)
+        if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'yarn'
+        run: |
+          cd Viewers
+          VER="${{ inputs.cs3d_version }}"
+          VER="${VER#v}"
+          echo "Pinning Cornerstone3D packages to $VER via Yarn resolutions..."
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const ver = process.argv[1];
+            const names = new Set();
+            const scan = d => {
+              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                if (!e.isDirectory()) continue;
+                const p = path.join(d, e.name, "package.json");
+                if (!fs.existsSync(p)) continue;
+                const j = JSON.parse(fs.readFileSync(p, "utf8"));
+                for (const dep of Object.keys({ ...j.dependencies, ...j.peerDependencies }))
+                  if (dep.startsWith("@cornerstonejs/") && !dep.startsWith("@cornerstonejs/codec-"))
+                    names.add(dep);
+              }
+            };
+            for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
+            const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            root.resolutions = root.resolutions || {};
+            for (const n of names) root.resolutions[n] = ver;
+            fs.writeFileSync("package.json", JSON.stringify(root, null, 2) + "\n");
+            console.log("Pinned:", [...names].join(", "));
+          ' "$VER"
+
+      - name: Pin Cornerstone3D packages (pnpm)
+        if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'pnpm'
+        run: |
+          cd Viewers
+          VER="${{ inputs.cs3d_version }}"
+          VER="${VER#v}"
+          echo "Pinning Cornerstone3D packages to $VER via pnpm overrides..."
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const ver = process.argv[1];
+            const names = new Set();
+            const scan = d => {
+              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                if (!e.isDirectory()) continue;
+                const p = path.join(d, e.name, "package.json");
+                if (!fs.existsSync(p)) continue;
+                const j = JSON.parse(fs.readFileSync(p, "utf8"));
+                for (const dep of Object.keys({ ...j.dependencies, ...j.peerDependencies }))
+                  if (dep.startsWith("@cornerstonejs/") && !dep.startsWith("@cornerstonejs/codec-"))
+                    names.add(dep);
+              }
+            };
+            for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
+            const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            root.pnpm = root.pnpm || {};
+            root.pnpm.overrides = root.pnpm.overrides || {};
+            for (const n of names) root.pnpm.overrides[n] = ver;
+            fs.writeFileSync("package.json", JSON.stringify(root, null, 2) + "\n");
+            console.log("Pinned:", [...names].join(", "));
+          ' "$VER"
+
+      - name: Install OHIF dependencies (Yarn)
+        if: steps.detect-pm.outputs.manager == 'yarn'
         run: |
           cd Viewers
           if [ -n "${{ inputs.cs3d_version }}" ]; then
-            echo "Updating Cornerstone3D packages to version ${{ inputs.cs3d_version }}..."
-            yarn up "@cornerstonejs/*@${{ inputs.cs3d_version }}"
             yarn install --no-frozen-lockfile
           else
             yarn install --frozen-lockfile
+          fi
+
+      - name: Install OHIF dependencies (pnpm)
+        if: steps.detect-pm.outputs.manager == 'pnpm'
+        run: |
+          cd Viewers
+          if [ -n "${{ inputs.cs3d_version }}" ]; then
+            pnpm install --no-frozen-lockfile
+          else
+            pnpm install --frozen-lockfile
           fi
 
       - name: Clone and install ohif-gcp-mode
@@ -92,12 +182,19 @@ jobs:
           cd ohif-gcp-extension
           yarn install --frozen-lockfile
 
-      - name: Link add-ons
-        if: inputs.link_addons
+      - name: Link add-ons (Yarn)
+        if: inputs.link_addons && steps.detect-pm.outputs.manager == 'yarn'
         run: |
           cd Viewers
           yarn cli link-mode ../ohif-gcp-mode
           yarn cli link-extension ../ohif-gcp-extension
+
+      - name: Link add-ons (pnpm)
+        if: inputs.link_addons && steps.detect-pm.outputs.manager == 'pnpm'
+        run: |
+          cd Viewers
+          pnpm cli link-mode ../ohif-gcp-mode
+          pnpm cli link-extension ../ohif-gcp-extension
 
       - name: Download configuration files
         run: |
@@ -105,17 +202,17 @@ jobs:
           wget -O ./firebase.json "${{ vars.OHIF_FIREBASE_JSON_URL }}"
           wget -O ./platform/app/public/config/test.js "${{ vars.OHIF_CONFIG_JS_URL }}"
 
-      - name: Build OHIF (standard)
-        if: ${{ !inputs.use_bun_workaround }}
+      - name: Build OHIF (Yarn)
+        if: steps.detect-pm.outputs.manager == 'yarn'
         run: |
           cd Viewers
           PUBLIC_URL=/ APP_CONFIG=config/test.js yarn build
 
-      - name: Build OHIF (bun workaround)
-        if: ${{ inputs.use_bun_workaround }}
+      - name: Build OHIF (pnpm)
+        if: steps.detect-pm.outputs.manager == 'pnpm'
         run: |
           cd Viewers
-          PUBLIC_URL=/ APP_CONFIG=config/test.js yarn --cwd platform/app run build:viewer
+          PUBLIC_URL=/ APP_CONFIG=config/test.js pnpm build
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0.11.0
