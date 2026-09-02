@@ -165,6 +165,7 @@ jobs:
                 "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
                 "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
                 "@cornerstonejs/calculate-suv": "calculate-suv",
+                "@cornerstonejs/metadata": "metadata",
               };
               const dir = dirMap[pkgName];
               if (!dir) return null;
@@ -287,6 +288,7 @@ jobs:
                 "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
                 "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
                 "@cornerstonejs/calculate-suv": "calculate-suv",
+                "@cornerstonejs/metadata": "metadata",
               };
               const dir = dirMap[pkgName];
               if (!dir) return null;
