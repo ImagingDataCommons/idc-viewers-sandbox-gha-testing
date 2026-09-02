@@ -87,6 +87,9 @@ jobs:
         with:
           version: ${{ steps.detect-pm.outputs.pnpm_version }}
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Resolve Cornerstone3D package versions
         id: resolve-cs3d
         if: inputs.cs3d_version != ''
