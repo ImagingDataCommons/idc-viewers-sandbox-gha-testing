@@ -196,6 +196,9 @@ jobs:
               };
               for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
 
+              /** Include all known CS3D packages to handle transitive dependencies */
+              Object.keys(dirMap).forEach(pkg => names.add(pkg));
+
               const resolutions = {};
               const summary = [];
 
@@ -318,6 +321,9 @@ jobs:
                 }
               };
               for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
+
+              /** Include all known CS3D packages to handle transitive dependencies */
+              Object.keys(dirMap).forEach(pkg => names.add(pkg));
 
               const overrides = {};
               const summary = [];
