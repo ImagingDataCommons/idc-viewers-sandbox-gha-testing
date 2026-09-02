@@ -87,104 +87,268 @@ jobs:
         with:
           version: ${{ steps.detect-pm.outputs.pnpm_version }}
 
-      - name: Resolve Cornerstone3D version
+      - name: Resolve Cornerstone3D package versions
         id: resolve-cs3d
         if: inputs.cs3d_version != ''
         run: |
           INPUT_VER="${{ inputs.cs3d_version }}"
           INPUT_VER="${INPUT_VER#v}"
 
-          echo "Resolving Cornerstone3D version from input: $INPUT_VER"
+          echo "Resolving Cornerstone3D package versions for release: $INPUT_VER"
 
           if [ "$INPUT_VER" = "latest" ]; then
-            echo "Querying npm for latest @cornerstonejs/core version..."
-            RESOLVED=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core" | jq -r '.["dist-tags"].latest')
+            echo "Using 'latest' - will query npm for each package's latest version"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
-            echo "Checking if version $INPUT_VER exists on npm..."
-            EXISTS=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core/$INPUT_VER" | jq -r '.version // empty')
-            if [ -n "$EXISTS" ]; then
-              RESOLVED="$INPUT_VER"
-            else
-              echo "Version $INPUT_VER not found on npm, finding closest published version..."
-              RESOLVED=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core" | jq -r --arg v "$INPUT_VER" '
-                .versions | keys | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) |
-                map(select(. <= $v)) | sort_by(split(".") | map(tonumber)) | last // empty
-              ')
-              if [ -z "$RESOLVED" ]; then
-                echo "::warning::No suitable version found, falling back to latest"
-                RESOLVED=$(curl -s "https://registry.npmjs.org/@cornerstonejs/core" | jq -r '.["dist-tags"].latest')
-              else
-                echo "::notice::Version $INPUT_VER not published to npm, using closest available: $RESOLVED"
-              fi
-            fi
+            echo "tag=v$INPUT_VER" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "Resolved version: $RESOLVED"
-          echo "version=$RESOLVED" >> "$GITHUB_OUTPUT"
-
-          {
-            echo ""
-            echo "| \`CS3D_RESOLVED\` | \`$RESOLVED\` |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "input_version=$INPUT_VER" >> "$GITHUB_OUTPUT"
 
       - name: Pin Cornerstone3D packages (Yarn)
         if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'yarn'
         run: |
           cd Viewers
-          VER="${{ steps.resolve-cs3d.outputs.version }}"
-          echo "Pinning Cornerstone3D packages to $VER via Yarn resolutions..."
-          node -e '
+          TAG="${{ steps.resolve-cs3d.outputs.tag }}"
+          INPUT_VER="${{ steps.resolve-cs3d.outputs.input_version }}"
+
+          echo "Resolving and pinning Cornerstone3D packages via Yarn resolutions..."
+
+          node --experimental-fetch -e '
             const fs = require("fs"), path = require("path");
-            const ver = process.argv[1];
-            const names = new Set();
-            const scan = d => {
-              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-                if (!e.isDirectory()) continue;
-                const p = path.join(d, e.name, "package.json");
-                if (!fs.existsSync(p)) continue;
-                const j = JSON.parse(fs.readFileSync(p, "utf8"));
-                for (const dep of Object.keys({ ...j.dependencies, ...j.peerDependencies }))
-                  if (dep.startsWith("@cornerstonejs/") && !dep.startsWith("@cornerstonejs/codec-"))
-                    names.add(dep);
+            const tag = process.argv[1];
+            const inputVer = process.argv[2];
+
+            async function getClosestNpmVersion(pkg, targetVer) {
+              try {
+                const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg)}`);
+                if (!res.ok) return null;
+                const data = await res.json();
+
+                if (targetVer === "latest") {
+                  return data["dist-tags"]?.latest || null;
+                }
+
+                const versions = Object.keys(data.versions || {})
+                  .filter(v => /^\d+\.\d+\.\d+$/.test(v))
+                  .sort((a, b) => {
+                    const pa = a.split(".").map(Number);
+                    const pb = b.split(".").map(Number);
+                    for (let i = 0; i < 3; i++) {
+                      if (pa[i] !== pb[i]) return pa[i] - pb[i];
+                    }
+                    return 0;
+                  });
+
+                if (versions.includes(targetVer)) return targetVer;
+
+                const compatible = versions.filter(v => v <= targetVer);
+                return compatible.length ? compatible[compatible.length - 1] : data["dist-tags"]?.latest;
+              } catch (e) {
+                console.error(`Failed to fetch ${pkg}: ${e.message}`);
+                return null;
               }
-            };
-            for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
-            const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
-            root.resolutions = root.resolutions || {};
-            for (const n of names) root.resolutions[n] = ver;
-            fs.writeFileSync("package.json", JSON.stringify(root, null, 2) + "\n");
-            console.log("Pinned:", [...names].join(", "));
-          ' "$VER"
+            }
+
+            async function getVersionFromGitHub(tag, pkgName) {
+              const dirMap = {
+                "@cornerstonejs/core": "core",
+                "@cornerstonejs/tools": "tools",
+                "@cornerstonejs/adapters": "adapters",
+                "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
+                "@cornerstonejs/ai": "ai",
+                "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
+                "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
+                "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
+                "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
+                "@cornerstonejs/calculate-suv": "calculate-suv",
+              };
+              const dir = dirMap[pkgName];
+              if (!dir) return null;
+
+              try {
+                const url = `https://raw.githubusercontent.com/cornerstonejs/cornerstone3D/${tag}/packages/${dir}/package.json`;
+                const res = await fetch(url);
+                if (!res.ok) return null;
+                const data = await res.json();
+                return data.version;
+              } catch (e) {
+                return null;
+              }
+            }
+
+            async function main() {
+              const names = new Set();
+              const scan = d => {
+                for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                  if (!e.isDirectory()) continue;
+                  const p = path.join(d, e.name, "package.json");
+                  if (!fs.existsSync(p)) continue;
+                  const j = JSON.parse(fs.readFileSync(p, "utf8"));
+                  for (const dep of Object.keys({ ...j.dependencies, ...j.peerDependencies }))
+                    if (dep.startsWith("@cornerstonejs/") && !dep.startsWith("@cornerstonejs/codec-"))
+                      names.add(dep);
+                }
+              };
+              for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
+
+              const resolutions = {};
+              const summary = [];
+
+              for (const pkg of names) {
+                let targetVer = inputVer;
+
+                if (tag !== "latest") {
+                  const ghVer = await getVersionFromGitHub(tag, pkg);
+                  if (ghVer) targetVer = ghVer;
+                }
+
+                const resolved = await getClosestNpmVersion(pkg, targetVer);
+                if (resolved) {
+                  resolutions[pkg] = resolved;
+                  const note = resolved !== targetVer ? ` (wanted ${targetVer})` : "";
+                  summary.push(`  ${pkg}: ${resolved}${note}`);
+                }
+              }
+
+              const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              root.resolutions = { ...root.resolutions, ...resolutions };
+              fs.writeFileSync("package.json", JSON.stringify(root, null, 2) + "\n");
+
+              console.log("Resolved versions:");
+              summary.forEach(s => console.log(s));
+
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                "\n\n### Cornerstone3D Resolved Versions\n| Package | Version |\n| --- | --- |\n" +
+                Object.entries(resolutions).map(([k, v]) => `| \`${k}\` | \`${v}\` |`).join("\n") + "\n"
+              );
+            }
+
+            main().catch(e => { console.error(e); process.exit(1); });
+          ' "$TAG" "$INPUT_VER"
 
       - name: Pin Cornerstone3D packages (pnpm)
         if: inputs.cs3d_version != '' && steps.detect-pm.outputs.manager == 'pnpm'
         run: |
           cd Viewers
-          VER="${{ steps.resolve-cs3d.outputs.version }}"
-          echo "Pinning Cornerstone3D packages to $VER via pnpm overrides..."
-          node -e '
+          TAG="${{ steps.resolve-cs3d.outputs.tag }}"
+          INPUT_VER="${{ steps.resolve-cs3d.outputs.input_version }}"
+
+          echo "Resolving and pinning Cornerstone3D packages via pnpm overrides..."
+
+          node --experimental-fetch -e '
             const fs = require("fs"), path = require("path");
-            const ver = process.argv[1];
-            const names = new Set();
-            const scan = d => {
-              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-                if (!e.isDirectory()) continue;
-                const p = path.join(d, e.name, "package.json");
-                if (!fs.existsSync(p)) continue;
-                const j = JSON.parse(fs.readFileSync(p, "utf8"));
-                for (const dep of Object.keys({ ...j.dependencies, ...j.peerDependencies }))
-                  if (dep.startsWith("@cornerstonejs/") && !dep.startsWith("@cornerstonejs/codec-"))
-                    names.add(dep);
+            const tag = process.argv[1];
+            const inputVer = process.argv[2];
+
+            async function getClosestNpmVersion(pkg, targetVer) {
+              try {
+                const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg)}`);
+                if (!res.ok) return null;
+                const data = await res.json();
+
+                if (targetVer === "latest") {
+                  return data["dist-tags"]?.latest || null;
+                }
+
+                const versions = Object.keys(data.versions || {})
+                  .filter(v => /^\d+\.\d+\.\d+$/.test(v))
+                  .sort((a, b) => {
+                    const pa = a.split(".").map(Number);
+                    const pb = b.split(".").map(Number);
+                    for (let i = 0; i < 3; i++) {
+                      if (pa[i] !== pb[i]) return pa[i] - pb[i];
+                    }
+                    return 0;
+                  });
+
+                if (versions.includes(targetVer)) return targetVer;
+
+                const compatible = versions.filter(v => v <= targetVer);
+                return compatible.length ? compatible[compatible.length - 1] : data["dist-tags"]?.latest;
+              } catch (e) {
+                console.error(`Failed to fetch ${pkg}: ${e.message}`);
+                return null;
               }
-            };
-            for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
-            const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
-            root.pnpm = root.pnpm || {};
-            root.pnpm.overrides = root.pnpm.overrides || {};
-            for (const n of names) root.pnpm.overrides[n] = ver;
-            fs.writeFileSync("package.json", JSON.stringify(root, null, 2) + "\n");
-            console.log("Pinned:", [...names].join(", "));
-          ' "$VER"
+            }
+
+            async function getVersionFromGitHub(tag, pkgName) {
+              const dirMap = {
+                "@cornerstonejs/core": "core",
+                "@cornerstonejs/tools": "tools",
+                "@cornerstonejs/adapters": "adapters",
+                "@cornerstonejs/dicom-image-loader": "dicomImageLoader",
+                "@cornerstonejs/ai": "ai",
+                "@cornerstonejs/labelmap-interpolation": "labelmap-interpolation",
+                "@cornerstonejs/polymorphic-segmentation": "polymorphic-segmentation",
+                "@cornerstonejs/nifti-volume-loader": "nifti-volume-loader",
+                "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
+                "@cornerstonejs/calculate-suv": "calculate-suv",
+              };
+              const dir = dirMap[pkgName];
+              if (!dir) return null;
+
+              try {
+                const url = `https://raw.githubusercontent.com/cornerstonejs/cornerstone3D/${tag}/packages/${dir}/package.json`;
+                const res = await fetch(url);
+                if (!res.ok) return null;
+                const data = await res.json();
+                return data.version;
+              } catch (e) {
+                return null;
+              }
+            }
+
+            async function main() {
+              const names = new Set();
+              const scan = d => {
+                for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                  if (!e.isDirectory()) continue;
+                  const p = path.join(d, e.name, "package.json");
+                  if (!fs.existsSync(p)) continue;
+                  const j = JSON.parse(fs.readFileSync(p, "utf8"));
+                  for (const dep of Object.keys({ ...j.dependencies, ...j.peerDependencies }))
+                    if (dep.startsWith("@cornerstonejs/") && !dep.startsWith("@cornerstonejs/codec-"))
+                      names.add(dep);
+                }
+              };
+              for (const ws of ["platform", "extensions", "modes"]) if (fs.existsSync(ws)) scan(ws);
+
+              const overrides = {};
+              const summary = [];
+
+              for (const pkg of names) {
+                let targetVer = inputVer;
+
+                if (tag !== "latest") {
+                  const ghVer = await getVersionFromGitHub(tag, pkg);
+                  if (ghVer) targetVer = ghVer;
+                }
+
+                const resolved = await getClosestNpmVersion(pkg, targetVer);
+                if (resolved) {
+                  overrides[pkg] = resolved;
+                  const note = resolved !== targetVer ? ` (wanted ${targetVer})` : "";
+                  summary.push(`  ${pkg}: ${resolved}${note}`);
+                }
+              }
+
+              const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              root.pnpm = root.pnpm || {};
+              root.pnpm.overrides = { ...root.pnpm.overrides, ...overrides };
+              fs.writeFileSync("package.json", JSON.stringify(root, null, 2) + "\n");
+
+              console.log("Resolved versions:");
+              summary.forEach(s => console.log(s));
+
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                "\n\n### Cornerstone3D Resolved Versions\n| Package | Version |\n| --- | --- |\n" +
+                Object.entries(overrides).map(([k, v]) => `| \`${k}\` | \`${v}\` |`).join("\n") + "\n"
+              );
+            }
+
+            main().catch(e => { console.error(e); process.exit(1); });
+          ' "$TAG" "$INPUT_VER"
 
       - name: Install OHIF dependencies (Yarn)
         if: steps.detect-pm.outputs.manager == 'yarn'
