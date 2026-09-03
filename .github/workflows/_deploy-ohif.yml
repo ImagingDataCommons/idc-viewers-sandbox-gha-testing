@@ -128,12 +128,25 @@ jobs:
           git clone --depth 1 --branch "$TAG" https://github.com/cornerstonejs/cornerstone3D.git cs3d-source
           cd cs3d-source
 
-          # Detect package manager from CS3D repo
+          # Detect package manager and Node version requirements from CS3D repo
           if grep -q '"packageManager".*pnpm' package.json 2>/dev/null; then
             echo "CS3D uses pnpm"
             CS3D_PM="pnpm"
             PNPM_VER=$(grep -oP '"packageManager":\s*"pnpm@\K[^"]+' package.json || echo "11")
-            echo "Installing pnpm@$PNPM_VER"
+            NODE_REQ=$(grep -oP '"node":\s*">=\K[0-9]+' package.json || echo "22")
+            echo "Requires pnpm@$PNPM_VER and Node >= $NODE_REQ"
+
+            # Install required Node version using nvm
+            export NVM_DIR="$HOME/.nvm"
+            if [ ! -d "$NVM_DIR" ]; then
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+            fi
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            nvm install "$NODE_REQ"
+            nvm use "$NODE_REQ"
+            echo "Now using Node $(node -v)"
+
+            # Install pnpm
             npm install -g "pnpm@$PNPM_VER"
           else
             echo "CS3D uses yarn"
