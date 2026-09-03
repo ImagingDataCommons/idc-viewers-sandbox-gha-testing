@@ -128,9 +128,26 @@ jobs:
           git clone --depth 1 --branch "$TAG" https://github.com/cornerstonejs/cornerstone3D.git cs3d-source
           cd cs3d-source
 
+          # Detect package manager from CS3D repo
+          if grep -q '"packageManager".*pnpm' package.json 2>/dev/null; then
+            echo "CS3D uses pnpm"
+            CS3D_PM="pnpm"
+            PNPM_VER=$(grep -oP '"packageManager":\s*"pnpm@\K[^"]+' package.json || echo "11")
+            echo "Installing pnpm@$PNPM_VER"
+            npm install -g "pnpm@$PNPM_VER"
+          else
+            echo "CS3D uses yarn"
+            CS3D_PM="yarn"
+          fi
+
           # Install dependencies and build
-          yarn install --frozen-lockfile
-          yarn build
+          if [ "$CS3D_PM" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+            pnpm build
+          else
+            yarn install --frozen-lockfile
+            yarn build
+          fi
 
           # Create tarballs directory
           mkdir -p ../cs3d-tarballs
