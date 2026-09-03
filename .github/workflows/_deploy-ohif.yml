@@ -231,6 +231,7 @@ jobs:
               "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
               "@cornerstonejs/calculate-suv": "calculate-suv",
               "@cornerstonejs/metadata": "metadata",
+              "@cornerstonejs/utils": "utils",
             };
 
             function findTarball(pkg) {
@@ -383,6 +384,7 @@ jobs:
               "@cornerstonejs/streaming-image-volume-loader": "streaming-image-volume-loader",
               "@cornerstonejs/calculate-suv": "calculate-suv",
               "@cornerstonejs/metadata": "metadata",
+              "@cornerstonejs/utils": "utils",
             };
 
             function findTarball(pkg) {
